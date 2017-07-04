@@ -21,14 +21,19 @@ type Detection struct {
 	Description string
 }
 
+type ProgressInfo struct {
+	ScannedBytes int64
+	TotalBytes int64
+}
+
 var EOF *Block = &Block{};
 
 // Bootstrap and run the detection system, scanning the given path
 // for remnants of wallets. Normally, the path given would
 // be a raw device file handle, like /dev/sdb or some such; the system
 // would then scan every sector of that device
-func Scan(startOffset int64, path string, onDetection func(Detection)) (error) {
-
+func Scan(startOffset int64, path string, onDetection func(Detection), onProgress func(ProgressInfo)) (error) {
+	signals := make(chan error, 10)
 	emptyPages := make(chan *Block, 30)
 	scannerQueue := make(chan *Block, 30)
 
@@ -39,37 +44,75 @@ func Scan(startOffset int64, path string, onDetection func(Detection)) (error) {
 		}
 	}
 
-	go scanBlocks(path, startOffset, emptyPages, scannerQueue)
+	onError := errorHandler([]chan *Block{emptyPages, scannerQueue}, signals)
+	onComplete := func() { signals <- io.EOF }
 
-	detectWallets(scannerQueue, emptyPages, onDetection)
+	go scanBlocks(path, startOffset, emptyPages, scannerQueue, onProgress, onError)
+	go detectWallets(scannerQueue, emptyPages, onDetection, onComplete)
+
+	// Wait for system to signal outcome
+	signal := <- signals
+	if signal == io.EOF {
+		return nil
+	}
+
+	return signal
+}
+
+func errorHandler(blockChannels []chan *Block, signals chan error) func(error) {
+	return func(err error) {
+		// 1. Signal that there was an error
+		signals <- err
+
+		// 2. Shut down everything
+		for _, ch := range blockChannels {
+			ch <- EOF
+		}
+	}
 }
 
 
-func scanBlocks(path string, startOffset int64, emptyPages chan *Block, out chan *Block) {
+func scanBlocks(path string, startOffset int64, emptyPages chan *Block, out chan *Block,
+onProgress func(ProgressInfo), onError func(error)) {
+	totalBytes, err := FileSize(path)
+	if err != nil {
+		onError(err)
+		return
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
-		panic(err)
+		onError(err)
+		return
 	}
 	defer f.Close()
 
 	if _, err = f.Seek(startOffset, 0); err != nil {
-		panic(err)
+		onError(err)
+		return
 	}
 
 	currentOffset := startOffset
 	for page := range emptyPages {
+		if page == EOF {
+			return
+		}
+
 		read, err := f.Read(page.data)
 		if err == io.EOF && read == 0 {
 			out <- EOF
 			return
 		} else if err != nil {
-			out <- EOF
-			panic(err)
+			onError(err)
+			return
 		}
 
 		// Got a block; send it to be scanned
 		page.offset = currentOffset
 		page.location = fmt.Sprintf("%s in %dkB block at byte offset %d", path, len(page.data)/1024, currentOffset)
+
+		onProgress(ProgressInfo{currentOffset, totalBytes})
+
 		out <- page
 	}
 }
@@ -87,10 +130,11 @@ var needles = [][]byte{
 // Scan blocks for traces of bitcoin wallets, the function will
 // wait in blocks on in until it sees EOF, and output scanned blocks
 // to out for reuse.
-func detectWallets(in chan *Block, out chan *Block, onDetection func(Detection)) {
+func detectWallets(in chan *Block, out chan *Block, onDetection func(Detection), onComplete func()) {
 	for {
 		page := <- in
 		if page == EOF {
+			onComplete()
 			return
 		}
 		for _, needle := range needles {

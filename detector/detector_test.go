@@ -9,7 +9,7 @@ import (
 func TestFindsRegularWallet(t *testing.T) {
 	recorder := &detectionRecorder{}
 
-	detector.Scan(0, "./test_wallet.dat", recorder.OnDetection)
+	detector.Scan(0, "./test_wallet.dat", recorder.OnDetection, recorder.OnProgress)
 
 	expected := []detector.Detection{
 		{"Found 'bestblock' at ./test_wallet.dat in 16kB block at byte offset 0"},
@@ -26,4 +26,6 @@ type detectionRecorder struct {
 }
 func (r *detectionRecorder) OnDetection(detection detector.Detection) {
 	r.detections = append(r.detections, detection)
+}
+func (r *detectionRecorder) OnProgress(pg detector.ProgressInfo) {
 }
