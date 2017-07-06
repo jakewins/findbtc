@@ -21,6 +21,21 @@ func TestFindsRegularWallet(t *testing.T) {
 	}
 }
 
+func TestFindsWalletInZipFile(t *testing.T) {
+	recorder := &detectionRecorder{}
+
+	detector.Scan(0, "./test_wallet.dat.zip", recorder.OnDetection, recorder.OnProgress)
+
+	expected := []detector.Detection{
+		{"Found 'bestblock' at Zipfile #0 @ byte 0 in [./test_wallet.dat.zip] in 16kB block at byte offset 49152"},
+		{"Found 'defaultkey' at Zipfile #0 @ byte 0 in [./test_wallet.dat.zip] in 16kB block at byte offset 49152"},
+		{"Found 'bestblock' at Zipfile #0 @ byte 0 in [./test_wallet.dat.zip] in 16kB block at byte offset 81920"},
+	}
+	if !reflect.DeepEqual(expected, recorder.detections) {
+		t.Errorf("Expected %v to be %v", recorder.detections, expected)
+	}
+}
+
 type detectionRecorder struct {
 	detections []detector.Detection
 }
