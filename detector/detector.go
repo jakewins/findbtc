@@ -84,6 +84,7 @@ func Scan(startOffset int64, path string, onDetection func(Detection), onProgres
 
 	emptyBlocks := make(chan *Block, 30)
 	zipDetectionQueue := make(chan *Block, 30)
+	gzipDetectionQueue := make(chan *Block, 30)
 	walletDetectionQueue := make(chan *Block, 30)
 
 	for i := 0; i<20; i++ {
@@ -101,8 +102,11 @@ func Scan(startOffset int64, path string, onDetection func(Detection), onProgres
 	// 1. Scan target files, breaking them into blocks of data to work with
 	go scanBlocks(scanTargets, emptyBlocks, zipDetectionQueue, onProgress, onError)
 
-	// 2. Pass those raw blocks to zipfile detection
-	go scanZipFiles(zipDetectionQueue, walletDetectionQueue, scanTargets, onError)
+	// 2. Pass blocks to zipfile detection
+	go scanZipFiles(zipDetectionQueue, gzipDetectionQueue, scanTargets)
+
+	// 3. Pass blocks to gzip file detection
+	go scanGzipFiles(gzipDetectionQueue, walletDetectionQueue, scanTargets)
 
 	// 3. And, finally, pass raw and uncompressed blocks both to wallet detection
 	go detectWallets(walletDetectionQueue, emptyBlocks, onDetection, onComplete)

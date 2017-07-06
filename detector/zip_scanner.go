@@ -90,7 +90,7 @@ func (c *closableBytesReader) Close() error {
 	return nil
 }
 
-func scanZipFiles(in, out chan *Block, scanTargets chan scanTarget, onError func(error)) {
+func scanZipFiles(in, out chan *Block, scanTargets chan scanTarget) {
 	openedFiles := 0
 	for block := range in {
 		if block == EOF {
@@ -100,7 +100,7 @@ func scanZipFiles(in, out chan *Block, scanTargets chan scanTarget, onError func
 			}
 
 			out <- EOF
-			return
+			continue
 		}
 
 		endOfCDOffset := int64(bytes.Index(block.data, ZIP_ECD_HEADER))
@@ -123,7 +123,6 @@ func scanZipFile(source scanTarget, endOfCentralDirectoryOffset int64, scanTarge
 	fmt.Printf("[zip] Read central directory, seems to be zipfile of %d bytes\n", size)
 
 	// Try to read the zipfile;
-	// TODO: More resilient zip reading may be possible; handling things like partials and corrupted files
 	f, err := source.Open()
 	if err != nil {
 		return 0

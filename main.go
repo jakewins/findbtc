@@ -30,6 +30,10 @@ func (p *progressReporter) onProgress(pg detector.ProgressInfo) {
 	now := time.Now().Unix()
 	if now - PROGRESS_REPORT_INTERVAL > p.lastReport {
 		p.lastReport = now
-		fmt.Printf("[%.2f%%]\n", float64(pg.ScannedBytes) / float64(pg.TotalBytes))
+		if pg.TotalBytes <= 0 {
+			fmt.Printf("[%dmb]\n", pg.ScannedBytes / 1024 * 1024)
+		} else {
+			fmt.Printf("[%.2f%%]\n", float64(pg.ScannedBytes) / float64(pg.TotalBytes))
+		}
 	}
 }
