@@ -12,11 +12,16 @@ func main() {
 	flag.Parse()
 	path := flag.Arg(0)
 
-	detector.Scan(*startOffset, path, func(detection detector.Detection) {
+	err := detector.Scan(*startOffset, path, func(detection detector.Detection) {
 		fmt.Printf(
-			"Found possible wallet trace:\n" +
+			"[main] Found possible wallet trace:\n" +
 			"  %s\n", detection.Description)
 	}, (&progressReporter{}).onProgress)
+
+	if err != nil {
+		fmt.Printf("[main] Exiting due to error: %s\n", err.Error())
+		return
+	}
 
 	fmt.Println("[COMPLETE]")
 }
@@ -30,10 +35,15 @@ func (p *progressReporter) onProgress(pg detector.ProgressInfo) {
 	now := time.Now().Unix()
 	if now - PROGRESS_REPORT_INTERVAL > p.lastReport {
 		p.lastReport = now
+		additionalTargets := ""
+		if pg.UnscannedTargets > 0 {
+			additionalTargets = fmt.Sprintf(" (%d additional targets)", pg.UnscannedTargets)
+		}
+
 		if pg.TotalBytes <= 0 {
-			fmt.Printf("[%dmb]\n", pg.ScannedBytes / 1024 * 1024)
+			fmt.Printf("[%dmb/??mb]%s\n", pg.ScannedBytes / (1024 * 1024), additionalTargets)
 		} else {
-			fmt.Printf("[%.2f%%]\n", float64(pg.ScannedBytes) / float64(pg.TotalBytes))
+			fmt.Printf("[%.2f%%]%s\n", (float64(pg.ScannedBytes) / float64(pg.TotalBytes)) * 100, additionalTargets)
 		}
 	}
 }

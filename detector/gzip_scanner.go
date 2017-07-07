@@ -89,7 +89,24 @@ func scanGzipFiles(in, out chan *Block, scanTargets chan scanTarget) {
 
 
 func scanGzipFile(source scanTarget, gzipOffset int64, scanTargets chan scanTarget) int {
-	fmt.Printf("Found possible gzip file at %d\n", gzipOffset)
+	// Sanity check
+	f, err := source.Open()
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	if _, err = f.Seek(gzipOffset, 0); err != nil {
+		return 0
+	}
+
+	r, err := gzip.NewReader(f)
+	if err != nil {
+		return 0
+	}
+	defer r.Close()
+	if _, err = r.Read(make([]byte, 1)); err != nil {
+		return 0
+	}
 
 	scanTargets <- &gzipScanTarget{
 		source:source,

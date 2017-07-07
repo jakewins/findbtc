@@ -80,7 +80,7 @@ var EOF *Block = &Block{};
 func Scan(startOffset int64, path string, onDetection func(Detection), onProgress func(ProgressInfo)) (error) {
 	signals := make(chan error, 10)
 
-	scanTargets := make(chan scanTarget, 10)
+	scanTargets := make(chan scanTarget, 1024 * 1024)
 
 	emptyBlocks := make(chan *Block, 30)
 	zipDetectionQueue := make(chan *Block, 30)
@@ -90,17 +90,23 @@ func Scan(startOffset int64, path string, onDetection func(Detection), onProgres
 	for i := 0; i<20; i++ {
 		emptyBlocks <- &Block{
 			offset:0,
-			data:make([]byte, 16*1024),
+			data:make([]byte, 4*1024),
 		}
 	}
 
-	onError := errorHandler([]chan *Block{emptyBlocks, zipDetectionQueue, walletDetectionQueue}, signals)
 	onComplete := func() {
+		// 1. Shut down everything
+		for _, ch := range []chan *Block{emptyBlocks, zipDetectionQueue, walletDetectionQueue} {
+			ch <- EOF
+			close(ch)
+		}
+
+		// 2. Signal that the party is over
 		signals <- io.EOF
 	}
 
 	// 1. Scan target files, breaking them into blocks of data to work with
-	go scanBlocks(scanTargets, emptyBlocks, zipDetectionQueue, onProgress, onError)
+	go scanBlocks(scanTargets, emptyBlocks, zipDetectionQueue, onProgress)
 
 	// 2. Pass blocks to zipfile detection
 	go scanZipFiles(zipDetectionQueue, gzipDetectionQueue, scanTargets)
@@ -127,44 +133,29 @@ func Scan(startOffset int64, path string, onDetection func(Detection), onProgres
 	return signal
 }
 
-func errorHandler(blockChannels []chan *Block, signals chan error) func(error) {
-	return func(err error) {
-		// 1. Signal that there was an error
-		signals <- err
-
-		// 2. Shut down everything
-		for _, ch := range blockChannels {
-			ch <- EOF
-		}
-	}
-}
-
-
 func scanBlocks(targets chan scanTarget, emptyBlocks chan *Block, out chan *Block,
-onProgress func(ProgressInfo), onError func(error)) {
+onProgress func(ProgressInfo)) {
 	outerLoop:
 		for target := range targets {
-			fmt.Printf("[scan] Starting new target: % v\n", target.Describe())
+			fmt.Printf("[scan] Starting new target: %s\n", target.Describe())
 			totalBytes, err := target.Size()
-			fmt.Printf("[scan] Target size: %d, % v\n", totalBytes, err)
 			if err != nil {
-				onError(err)
-				return
+				fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
+				continue
 			}
 
 			f, err := target.Open()
 			if err != nil {
-				onError(err)
-				return
+				fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
+				continue
 			}
 			defer f.Close()
 
 			if _, err = f.Seek(target.StartOffset(), 0); err != nil {
-				onError(err)
-				return
+				fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
+				continue
 			}
 
-			remainingTargets := len(targets)
 			currentOffset := target.StartOffset()
 			for block := range emptyBlocks {
 				if block == EOF {
@@ -177,11 +168,13 @@ onProgress func(ProgressInfo), onError func(error)) {
 					if read == 0 {
 						// Signal that we completed a target file
 						out <- EOF
+						emptyBlocks <- block
 						continue outerLoop
 					}
 				} else if err != nil {
-					onError(err)
-					return
+					fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
+					emptyBlocks <- block
+					continue outerLoop
 				}
 
 				// Got a block; send it to be scanned
@@ -190,7 +183,11 @@ onProgress func(ProgressInfo), onError func(error)) {
 				block.source = target
 
 				currentOffset += int64(len(block.data))
-				onProgress(ProgressInfo{target.Describe(), currentOffset, totalBytes, remainingTargets})
+				onProgress(ProgressInfo{
+					CurrentTarget:target.Describe(),
+					ScannedBytes: currentOffset,
+					TotalBytes: totalBytes,
+					UnscannedTargets: len(targets)})
 
 				out <- block
 			}

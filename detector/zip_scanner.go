@@ -67,7 +67,6 @@ func (t *zipScanTarget) Open() (TargetReader, error) {
 
 	data, err := ioutil.ReadAll(reader)
 
-	fmt.Printf("[zipTarget] Open readall %d, % v\n", len(data), err)
 	if err != nil {
 		return nil, err
 	}
@@ -120,8 +119,6 @@ func scanZipFile(source scanTarget, endOfCentralDirectoryOffset int64, scanTarge
 		return 0
 	}
 
-	fmt.Printf("[zip] Read central directory, seems to be zipfile of %d bytes\n", size)
-
 	// Try to read the zipfile;
 	f, err := source.Open()
 	if err != nil {
@@ -133,7 +130,6 @@ func scanZipFile(source scanTarget, endOfCentralDirectoryOffset int64, scanTarge
 
 	reader, err := zip.NewReader(f, size)
 	if err != nil {
-		panic(err)
 		return 0
 	}
 
