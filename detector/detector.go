@@ -18,6 +18,12 @@ type Block struct {
 	// The target this block came from
 	source scanTarget
 }
+func NewBlock(size int) *Block {
+	return &Block{
+		offset:0,
+		data:make([]byte, size),
+	}
+}
 
 // Describes a detected wallet
 type Detection struct {
@@ -96,7 +102,7 @@ func Scan(startOffset int64, path string, onDetection func(Detection), onProgres
 
 	onComplete := func() {
 		// 1. Shut down everything
-		for _, ch := range []chan *Block{emptyBlocks, zipDetectionQueue, walletDetectionQueue} {
+		for _, ch := range []chan *Block{emptyBlocks, zipDetectionQueue, gzipDetectionQueue, walletDetectionQueue} {
 			ch <- EOF
 			close(ch)
 		}
@@ -108,17 +114,17 @@ func Scan(startOffset int64, path string, onDetection func(Detection), onProgres
 	// 1. Scan target files, breaking them into blocks of data to work with
 	go scanBlocks(scanTargets, emptyBlocks, zipDetectionQueue, onProgress)
 
-	// 2. Pass blocks to zipfile detection
+	// 2. Pass blocks to zipfile detection; any files found will be published as new targets
 	go scanZipFiles(zipDetectionQueue, gzipDetectionQueue, scanTargets)
 
-	// 3. Pass blocks to gzip file detection
+	// 3. Pass blocks to gzip file detection; any files found will be published as new targets
 	go scanGzipFiles(gzipDetectionQueue, walletDetectionQueue, scanTargets)
 
 	// 3. And, finally, pass raw and uncompressed blocks both to wallet detection
 	go detectWallets(walletDetectionQueue, emptyBlocks, onDetection, onComplete)
 
 
-	// Prime the system by starting a scan of the source path
+	// Publish the source file as the first target to scan
 	scanTargets <- &fileScanTarget{
 		startOffset:startOffset,
 		path: path,
@@ -135,73 +141,81 @@ func Scan(startOffset int64, path string, onDetection func(Detection), onProgres
 
 func scanBlocks(targets chan scanTarget, emptyBlocks chan *Block, out chan *Block,
 onProgress func(ProgressInfo)) {
-	outerLoop:
-		for target := range targets {
-			fmt.Printf("[scan] Starting new target: %s\n", target.Describe())
-			totalBytes, err := target.Size()
-			if err != nil {
-				fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
-				continue
-			}
+	var f TargetReader
+	var currentOffset int64
 
-			f, err := target.Open()
-			if err != nil {
-				fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
-				continue
-			}
-			defer f.Close()
-
-			if _, err = f.Seek(target.StartOffset(), 0); err != nil {
-				fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
-				continue
-			}
-
-			currentOffset := target.StartOffset()
-			for block := range emptyBlocks {
-				if block == EOF {
-					fmt.Println("[scan] got EOF, exiting")
-					return
-				}
-
-				read, err := f.Read(block.data)
-				if err == io.EOF {
-					if read == 0 {
-						// Signal that we completed a target file
-						out <- EOF
-						emptyBlocks <- block
-						continue outerLoop
-					}
-				} else if err != nil {
-					fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
-					emptyBlocks <- block
-					continue outerLoop
-				}
-
-				// Got a block; send it to be scanned
-				block.offset = currentOffset
-				block.location = fmt.Sprintf("%s in %dkB block at byte offset %d", target.Describe(), len(block.data)/1024, currentOffset)
-				block.source = target
-
-				currentOffset += int64(len(block.data))
-				onProgress(ProgressInfo{
-					CurrentTarget:target.Describe(),
-					ScannedBytes: currentOffset,
-					TotalBytes: totalBytes,
-					UnscannedTargets: len(targets)})
-
-				out <- block
-			}
+	for target := range targets {
+		fmt.Printf("[scan] Starting new target: %s\n", target.Describe())
+		totalBytes, err := target.Size()
+		if err != nil {
+			fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
+			goto nextTarget
 		}
+
+		if f, err = target.Open(); err != nil {
+			fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
+			goto nextTarget
+		}
+
+		if _, err = f.Seek(target.StartOffset(), 0); err != nil {
+			fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
+			goto nextTarget
+		}
+
+		currentOffset = target.StartOffset()
+		for block := range emptyBlocks {
+			if block == EOF {
+				fmt.Println("[scan] got EOF, exiting")
+				return
+			}
+
+			read, err := f.Read(block.data)
+			if err == io.EOF {
+				if read == 0 {
+					// Signal that we completed a target file
+					emptyBlocks <- block
+					goto nextTarget
+				}
+			} else if err != nil {
+				fmt.Printf("[scan] Unable to scan target: %s\n", err.Error())
+				emptyBlocks <- block
+				goto nextTarget
+			}
+
+			// Got a block; send it to be scanned
+			block.offset = currentOffset
+			block.location = fmt.Sprintf("%s in %dkB block at byte offset %d", target.Describe(), len(block.data)/1024, currentOffset)
+			block.source = target
+
+			currentOffset += int64(len(block.data))
+			onProgress(ProgressInfo{
+				CurrentTarget:target.Describe(),
+				ScannedBytes: currentOffset,
+				TotalBytes: totalBytes,
+				UnscannedTargets: len(targets)})
+
+			out <- block
+		}
+
+		nextTarget:
+		out <- EOF
+		if f != nil {
+			f.Close()
+		}
+	}
 }
 
-// BTC wallets are Berkeley DBs, details on them here: https://github.com/berkeleydb/libdb/blob/master/src/dbinc/db.in
-// The byte chunks below are btc-specific keys that appear in wallets.
 var needles = [][]byte{
+	// BTC wallets are Berkeley DBs, details on them here: https://github.com/berkeleydb/libdb/blob/master/src/dbinc/db.in
+	// The byte chunks below are btc-specific keys that appear in wallets.
 	[]byte("orderposnext"),
 	[]byte("addrIncoming"),
 	[]byte("bestblock"),
 	[]byte("defaultkey"),
 	[]byte("acentry"),
+
+	// Also worth looking for the standard wallet file name; it might appear both in inodes and in zip file indexes
+	[]byte("wallet.dat"),
 }
 
 // Scan blocks for traces of bitcoin wallets, the function will
