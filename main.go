@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/jakewins/wheres-wallet/detector"
+	"github.com/jakewins/findbtc/detector"
 	"time"
 )
 
