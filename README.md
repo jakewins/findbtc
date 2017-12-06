@@ -11,6 +11,14 @@ The tool can find wallets even if;
 - The wallet is inside a .zip or .tar.gz file, including 
   nested in multiple levels of compressed files
   
+## Installing
+
+This requires that you have the Go programming language set up on your 
+machine, please see https://golang.org/doc/install 
+
+    go install github.com/jakewins/findbtc
+    
+Alternatively, 
 
 ## Usage
 
