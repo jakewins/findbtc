@@ -4,8 +4,6 @@ package detector
 
 import (
 	"os"
-	"syscall"
-	"unsafe"
 )
 
 func FileSize(path string) (int64, error){
@@ -16,5 +14,4 @@ func FileSize(path string) (int64, error){
 
 	return info.Size(), nil
 }
-
 
