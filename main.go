@@ -47,3 +47,4 @@ func (p *progressReporter) onProgress(pg detector.ProgressInfo) {
 		}
 	}
 }
+
