@@ -1,16 +1,16 @@
 package detector
 
 import (
-"bytes"
-"fmt"
-	"os"
+	"bytes"
+	"fmt"
 	"io"
+	"os"
 )
 
 // A block of data being worked on
 type Block struct {
 	offset int64
-	data []byte
+	data   []byte
 
 	// Describe how to find this block of data
 	location string
@@ -18,10 +18,11 @@ type Block struct {
 	// The target this block came from
 	source scanTarget
 }
+
 func NewBlock(size int) *Block {
 	return &Block{
-		offset:0,
-		data:make([]byte, size),
+		offset: 0,
+		data:   make([]byte, size),
 	}
 }
 
@@ -57,9 +58,10 @@ type scanTarget interface {
 }
 
 type fileScanTarget struct {
-	path string
+	path        string
 	startOffset int64
 }
+
 func (t *fileScanTarget) Describe() string {
 	return t.path
 }
@@ -77,26 +79,26 @@ func (t *fileScanTarget) Open() (TargetReader, error) {
 	return f, nil
 }
 
-var EOF *Block = &Block{};
+var EOF *Block = &Block{}
 
 // Bootstrap and run the detection system, scanning the given path
 // for remnants of wallets. Normally, the path given would
 // be a raw device file handle, like /dev/sdb or some such; the system
 // would then scan every sector of that device
-func Scan(startOffset int64, path string, onDetection func(Detection), onProgress func(ProgressInfo)) (error) {
+func Scan(startOffset int64, path string, onDetection func(Detection), onProgress func(ProgressInfo)) error {
 	signals := make(chan error, 10)
 
-	scanTargets := make(chan scanTarget, 1024 * 1024)
+	scanTargets := make(chan scanTarget, 1024*1024)
 
 	emptyBlocks := make(chan *Block, 30)
 	zipDetectionQueue := make(chan *Block, 30)
 	gzipDetectionQueue := make(chan *Block, 30)
 	walletDetectionQueue := make(chan *Block, 30)
 
-	for i := 0; i<20; i++ {
+	for i := 0; i < 20; i++ {
 		emptyBlocks <- &Block{
-			offset:0,
-			data:make([]byte, 4*1024),
+			offset: 0,
+			data:   make([]byte, 4*1024),
 		}
 	}
 
@@ -123,15 +125,14 @@ func Scan(startOffset int64, path string, onDetection func(Detection), onProgres
 	// 3. And, finally, pass raw and uncompressed blocks both to wallet detection
 	go detectWallets(walletDetectionQueue, emptyBlocks, onDetection, onComplete)
 
-
 	// Publish the source file as the first target to scan
 	scanTargets <- &fileScanTarget{
-		startOffset:startOffset,
-		path: path,
+		startOffset: startOffset,
+		path:        path,
 	}
 
 	// Wait for system to signal outcome
-	signal := <- signals
+	signal := <-signals
 	if signal == io.EOF {
 		return nil
 	}
@@ -140,7 +141,7 @@ func Scan(startOffset int64, path string, onDetection func(Detection), onProgres
 }
 
 func scanBlocks(targets chan scanTarget, emptyBlocks chan *Block, out chan *Block,
-onProgress func(ProgressInfo)) {
+	onProgress func(ProgressInfo)) {
 	var f TargetReader
 	var currentOffset int64
 
@@ -189,15 +190,15 @@ onProgress func(ProgressInfo)) {
 
 			currentOffset += int64(len(block.data))
 			onProgress(ProgressInfo{
-				CurrentTarget:target.Describe(),
-				ScannedBytes: currentOffset,
-				TotalBytes: totalBytes,
+				CurrentTarget:    target.Describe(),
+				ScannedBytes:     currentOffset,
+				TotalBytes:       totalBytes,
 				UnscannedTargets: len(targets)})
 
 			out <- block
 		}
 
-		nextTarget:
+	nextTarget:
 		out <- EOF
 		if f != nil {
 			f.Close()
@@ -228,7 +229,7 @@ func detectWallets(in chan *Block, out chan *Block, onDetection func(Detection),
 			return
 		}
 		for _, needle := range needles {
-			if(bytes.Contains(block.data, needle)) {
+			if bytes.Contains(block.data, needle) {
 				onDetection(Detection{
 					Description: fmt.Sprintf("Found '%s' at %s", needle, block.location),
 				})

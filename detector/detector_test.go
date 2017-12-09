@@ -1,9 +1,9 @@
 package detector_test
 
 import (
-	"testing"
 	"github.com/jakewins/wheres-wallet/detector"
 	"reflect"
+	"testing"
 )
 
 func TestFindsRegularWallet(t *testing.T) {
@@ -54,6 +54,7 @@ func TestFindsWalletInGzipFile(t *testing.T) {
 type detectionRecorder struct {
 	detections []detector.Detection
 }
+
 func (r *detectionRecorder) OnDetection(detection detector.Detection) {
 	r.detections = append(r.detections, detection)
 }

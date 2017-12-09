@@ -1,12 +1,12 @@
 package detector
 
 import (
-	"bytes"
 	"archive/zip"
+	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io/ioutil"
 	"io"
+	"io/ioutil"
 )
 
 // This implements a forensic system for discovering and decoding zipfiles
@@ -21,22 +21,25 @@ import (
 // file is not intact.
 
 // Magic preamble for the end-of-central-directory record
-var ZIP_ECD_HEADER = []byte{0x50,0x4b,0x05,0x06}
+var ZIP_ECD_HEADER = []byte{0x50, 0x4b, 0x05, 0x06}
+
 // Size of the central directory in bytes
 const ZIP_ECD_FIELD_CENTRAL_DIRECTORY_SIZE = 12
+
 // Offset in bytes from the start of the central directory to the start of the zip file
 const ZIP_ECD_FIELD_START_ARCHIVE_OFFSET = 16
+
 // Size of the variable-length comment field in the end-of-central-directory record
 const ZIP_ECD_FIELD_COMMENT_SIZE = 20
 
-
 type zipScanTarget struct {
-	source scanTarget
-	zipOffset int64
-	fileIndex int
-	zipSize int64
+	source               scanTarget
+	zipOffset            int64
+	fileIndex            int
+	zipSize              int64
 	uncompressedFileSize int64
 }
+
 func (t *zipScanTarget) Describe() string {
 	return fmt.Sprintf("Zipfile #%d @ byte %d in [%s]", t.fileIndex, t.zipOffset, t.source.Describe())
 }
@@ -75,16 +78,18 @@ func (t *zipScanTarget) Open() (TargetReader, error) {
 }
 
 type offsetReaderAt struct {
-	r io.ReaderAt
+	r      io.ReaderAt
 	offset int64
 }
+
 func (r *offsetReaderAt) ReadAt(p []byte, off int64) (int, error) {
-	return r.r.ReadAt(p, r.offset + off)
+	return r.r.ReadAt(p, r.offset+off)
 }
 
 type closableBytesReader struct {
 	*bytes.Reader
 }
+
 func (c *closableBytesReader) Close() error {
 	return nil
 }
@@ -104,7 +109,7 @@ func scanZipFiles(in, out chan *Block, scanTargets chan scanTarget) {
 
 		endOfCDOffset := int64(bytes.Index(block.data, ZIP_ECD_HEADER))
 		if endOfCDOffset != -1 {
-			openedFiles += scanZipFile(block.source, block.offset + endOfCDOffset, scanTargets)
+			openedFiles += scanZipFile(block.source, block.offset+endOfCDOffset, scanTargets)
 		}
 
 		// Forward the raw block for other scanners
@@ -138,10 +143,10 @@ func scanZipFile(source scanTarget, endOfCentralDirectoryOffset int64, scanTarge
 	for fileIndex, fileInfo := range reader.File {
 		newScanTargets += 1
 		scanTargets <- &zipScanTarget{
-			source: source,
-			zipOffset: offset,
-			fileIndex: fileIndex,
-			zipSize: size,
+			source:               source,
+			zipOffset:            offset,
+			fileIndex:            fileIndex,
+			zipSize:              size,
 			uncompressedFileSize: int64(fileInfo.UncompressedSize64),
 		}
 	}
@@ -160,17 +165,17 @@ func readZipFileSize(source scanTarget, endOfCentralDirectoryOffset int64) (int6
 	defer f.Close()
 
 	intBuffer := make([]byte, 4)
-	if _, err = f.ReadAt(intBuffer, endOfCentralDirectoryOffset + ZIP_ECD_FIELD_CENTRAL_DIRECTORY_SIZE); err != nil {
+	if _, err = f.ReadAt(intBuffer, endOfCentralDirectoryOffset+ZIP_ECD_FIELD_CENTRAL_DIRECTORY_SIZE); err != nil {
 		return 0, 0, err
 	}
 	centralDirectorySize := int64(binary.LittleEndian.Uint32(intBuffer))
 
-	if _, err = f.ReadAt(intBuffer, endOfCentralDirectoryOffset + ZIP_ECD_FIELD_START_ARCHIVE_OFFSET); err != nil {
+	if _, err = f.ReadAt(intBuffer, endOfCentralDirectoryOffset+ZIP_ECD_FIELD_START_ARCHIVE_OFFSET); err != nil {
 		return 0, 0, err
 	}
 	archiveStartFromCentralDirectory := int64(binary.LittleEndian.Uint32(intBuffer))
 
-	if _, err = f.ReadAt(intBuffer[:2], endOfCentralDirectoryOffset + ZIP_ECD_FIELD_COMMENT_SIZE); err != nil {
+	if _, err = f.ReadAt(intBuffer[:2], endOfCentralDirectoryOffset+ZIP_ECD_FIELD_COMMENT_SIZE); err != nil {
 		return 0, 0, err
 	}
 	commentFieldSize := int64(binary.LittleEndian.Uint16(intBuffer[:2]))
