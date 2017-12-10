@@ -1,13 +1,13 @@
 package detector
 
 import (
+	"golang.org/x/sys/unix"
 	"os"
 	"syscall"
-	"golang.org/x/sys/unix"
 	"unsafe"
 )
 
-func FileSize(path string) (int64, error){
+func FileSize(path string) (int64, error) {
 	// 1. Try just stat'ing the file
 	info, err := os.Stat(path)
 	if err != nil {
@@ -33,5 +33,3 @@ func FileSize(path string) (int64, error){
 
 	return size, nil
 }
-
-

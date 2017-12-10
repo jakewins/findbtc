@@ -2,8 +2,8 @@ package detector
 
 import (
 	"bytes"
-	"fmt"
 	"compress/gzip"
+	"fmt"
 	"io"
 )
 
@@ -12,9 +12,10 @@ import (
 var GZIP_HEADER = []byte{0x1f, 0x8b}
 
 type gzipScanTarget struct {
-	source scanTarget
+	source     scanTarget
 	gzipOffset int64
 }
+
 func (t *gzipScanTarget) Describe() string {
 	return fmt.Sprintf("Gzipfile @ byte %d in [%s]", t.gzipOffset, t.source.Describe())
 }
@@ -42,11 +43,11 @@ func (t *gzipScanTarget) Open() (TargetReader, error) {
 	return &gzipTargetReader{reader, f}, nil
 }
 
-
 type gzipTargetReader struct {
-	r *gzip.Reader
+	r  *gzip.Reader
 	fc io.Closer
 }
+
 func (r *gzipTargetReader) ReadAt(p []byte, off int64) (n int, err error) {
 	return -1, fmt.Errorf("Indexed reads of gzip files not yet implemented")
 }
@@ -79,14 +80,13 @@ func scanGzipFiles(in, out chan *Block, scanTargets chan scanTarget) {
 
 		gzipOffset := int64(bytes.Index(block.data, GZIP_HEADER))
 		if gzipOffset != -1 {
-			openedFiles += scanGzipFile(block.source, block.offset + gzipOffset, scanTargets)
+			openedFiles += scanGzipFile(block.source, block.offset+gzipOffset, scanTargets)
 		}
 
 		// Forward the raw block for other scanners
 		out <- block
 	}
 }
-
 
 func scanGzipFile(source scanTarget, gzipOffset int64, scanTargets chan scanTarget) int {
 	// Sanity check
@@ -109,8 +109,8 @@ func scanGzipFile(source scanTarget, gzipOffset int64, scanTargets chan scanTarg
 	}
 
 	scanTargets <- &gzipScanTarget{
-		source:source,
-		gzipOffset:gzipOffset,
+		source:     source,
+		gzipOffset: gzipOffset,
 	}
 
 	return 1
