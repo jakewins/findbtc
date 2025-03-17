@@ -16,7 +16,9 @@ The tool can find wallets even if;
 This requires that you have the Go programming language set up on your 
 machine, please see https://golang.org/doc/install 
 
-    go get github.com/jakewins/findbtc
+    go install github.com/jakewins/findbtc
+    cd ~/go/bin/
+    sudo ./findbtc /dev/sda
 
 ## Usage
 
